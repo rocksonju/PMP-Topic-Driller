@@ -1,1 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMP Brief Formatter — MD to DOCX & PDF</title>
 
+<!-- Dependencies via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+<script src="https://unpkg.com/html-docx-js@0.3.1/dist/html-docx.js"></script>
+
+<style>
+/* ===== RESET & VARS (OLED NEON FINTECH) ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Apple OLED Blacks & Deep Grays */
+  --bg-base:     #000000; 
+  --bg-surface:  #0a0a0c; 
+  --bg-hover:    #1c1c1e; 
+  --border:      rgba(255, 255, 255, 0.15);
+  
+  /* FinTech Neon Accents */
+  --accent:      #00d8ff; 
+  --accent-dark: #007aff; 
+  --neon-glow:   0 0 15px rgba(0, 216, 255, 0.35);
+  --neon-glow-strong: 0 0 25px rgba(0, 216, 255, 0.6);
+  
+  /* Custom Orange Header Colors */
+  --header-orange: #ff9f0a;
+  --header-orange-glow: rgba(255, 159, 10, 0.4);
+  --header-orange-bg: rgba(255, 159, 10, 0.08);
+  
+  /* Crisp Apple Typography */
+  --text-main:   #f5f5f7; 
+  --text-muted:  #86868b; 
+  --text-bright: #ffffff; 
+  
+  --danger:      #ff453a; 
+  --danger-hover:#ff6961;
+  
+  --success:     #32d74b;
+  --shadow:      0 8px 32px rgba(0,0,0,0.8);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-main);
+  min-height: 100vh;
+}
+
+/* ===== APP BAR (APPLE GLASSMORPHISM) ===== */
+.app-bar {
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(10, 10, 12, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.app-bar-brand { display: flex; align-items: center; gap: 0.75rem; }
+.app-bar-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: #000;
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 10px rgba(0, 216, 255, 0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+}
+.app-bar-title { color: var(--header-orange); font-size: 0.95rem; font-weight: 700; line-height: 1.2; letter-spacing: 0.02em; }
+.app-bar-sub   { color: var(--accent); font-size: 0.68rem; text-shadow: 0 0 5px rgba(0, 216, 255, 0.4); }
+
+.btn-row { display: flex; gap: 7px; align-items: center; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0.42rem 1rem; border-radius: 6px; border: none;
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+}
+.btn:active { transform: scale(0.95); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; filter: grayscale(100%); }
+.btn svg { flex-shrink: 0; }
+
+.btn-pdf  { background: var(--danger); color: white; }
+.btn-pdf:hover  { background: var(--danger-hover); box-shadow: 0 0 15px rgba(255, 69, 58, 0.4); }
+.btn-docx { background: var(--accent-dark); color: white; }
+.btn-docx:hover { background: #388bfd; box-shadow: 0 0 15px rgba(0, 122, 255, 0.4); }
+.btn-ghost {
+  background: transparent; color: var(--text-main);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.05); border-color: #8b949e; }
+
+/* ===== UPLOAD SECTION ===== */
+#upload-section {
+  max-width: 680px; margin: 3rem auto; padding: 0 1.25rem;
+}
+
+.section-heading {
+  text-align: center; margin-bottom: 1.75rem;
+  color: var(--header-orange); font-size: 1.5rem; font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.section-sub {
+  text-align: center; color: var(--text-muted); font-size: 0.85rem;
+  margin-top: 0.3rem; margin-bottom: 2rem;
+}
+
+.drop-zone {
+  background: rgba(10, 10, 12, 0.5); border: 1px dashed var(--border);
+  border-radius: 14px; padding: 2.75rem 2rem; text-align: center;
+  cursor: pointer; transition: all 0.3s ease;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--accent); background: rgba(0, 216, 255, 0.03);
+  box-shadow: var(--neon-glow), inset 0 0 20px rgba(0, 216, 255, 0.05);
+}
+.dz-icon { font-size: 3rem; margin-bottom: 0.85rem; filter: drop-shadow(0 0 8px rgba(255,255,255,0.2)); }
+.dz-title { font-size: 1.05rem; font-weight: 700; color: var(--header-orange); margin-bottom: 0.35rem; }
+.dz-sub   { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.35rem; }
+
+.btn-pick {
+  background: transparent; color: var(--accent);
+  padding: 0.55rem 1.6rem; border-radius: 7px; border: 1px solid var(--accent);
+  font-size: 0.88rem; font-weight: 700; cursor: pointer;
+  box-shadow: var(--neon-glow);
+  transition: all 0.2s ease;
+}
+.btn-pick:hover { background: var(--accent); color: #000; box-shadow: var(--neon-glow-strong); }
+
+.or-divider {
+  position: relative; text-align: center;
+  color: var(--text-muted); font-size: 0.78rem; font-weight: 600;
+  margin: 1.5rem 0; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.or-divider::before, .or-divider::after {
+  content: ''; position: absolute; top: 50%;
+  width: calc(50% - 36px); height: 1px; background: var(--border);
+}
+.or-divider::before { left: 0; } .or-divider::after { right: 0; }
+
+.input-label {
+  font-size: 0.75rem; font-weight: 700; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;
+  display: block; text-shadow: 0 0 5px rgba(0,216,255,0.3);
+}
+
+#md-input {
+  width: 100%; height: 200px;
+  background: #050505;
+  border: 1px solid var(--border); border-radius: 9px;
+  padding: 0.9rem 1rem;
+  font-family: 'Cascadia Code', 'Courier New', 'Consolas', monospace;
+  font-size: 0.82rem; line-height: 1.6; color: var(--text-main);
+  resize: vertical; outline: none;
+  transition: all 0.3s ease;
+}
+#md-input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--neon-glow);
+}
+
+.btn-render {
+  display: block; width: 100%; margin-top: 1rem;
+  background: transparent; color: var(--accent);
+  padding: 0.85rem; border-radius: 9px; border: 1px solid var(--accent);
+  font-size: 0.95rem; font-weight: 800; cursor: pointer;
+  box-shadow: var(--neon-glow);
+  transition: all 0.2s ease;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.btn-render:hover   { background: var(--accent); color: #000; box-shadow: var(--neon-glow-strong); }
+.btn-render:active  { transform: scale(0.98); }
+
+/* ===== PREVIEW SECTION ===== */
+#preview-section { display: none; max-width: 940px; margin: 0 auto 5rem; padding: 0 1.25rem; }
+
+.preview-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.85rem;
+}
+.preview-label {
+  font-size: 0.7rem; font-weight: 800; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.15em;
+}
+.file-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.72rem; background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent); padding: 3px 10px; border-radius: 20px; font-weight: 700;
+  box-shadow: 0 0 8px rgba(0,216,255,0.2);
+}
+
+/* ===== DOCUMENT CONTENT (SCREEN PREVIEW - OLED NEON) ===== */
+.document {
+  background: #050505; 
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 0 40px rgba(0, 216, 255, 0.03);
+  padding: 3.5rem 4rem;
+  line-height: 1.78; color: var(--text-main);
+  font-size: 0.94rem;
+}
+
+/* H1 — document title */
+.document h1 {
+  font-size: 1.85rem; color: var(--header-orange); font-weight: 900;
+  text-align: center; line-height: 1.25;
+  padding-bottom: 0.75rem; margin-bottom: 0.15rem;
+  border-bottom: 2px solid var(--header-orange);
+  text-shadow: 0 0 15px var(--header-orange-glow);
+}
+
+/* H3 immediately after H1 — subtitle line */
+.document h1 + h3 {
+  text-align: center; color: var(--text-muted);
+  text-transform: none; letter-spacing: 0;
+  font-size: 0.88rem; font-weight: 500;
+  margin-top: 0.4rem; margin-bottom: 0;
+  border: none; padding: 0;
+}
+
+/* H2 — section headers */
+.document h2 {
+  font-size: 1.08rem; color: var(--header-orange); font-weight: 800;
+  margin: 2.5rem 0 0.8rem;
+  padding: 0.5rem 0.85rem;
+  border-left: 3px solid var(--header-orange);
+  background: linear-gradient(90deg, var(--header-orange-bg) 0%, transparent 100%);
+  border-radius: 0 4px 4px 0;
+  box-shadow: -2px 0 10px rgba(255, 159, 10, 0.2);
+}
+
+/* H3 — subsection headers */
+.document h3 {
+  font-size: 0.85rem; color: var(--header-orange); font-weight: 800;
+  margin: 1.6rem 0 0.55rem;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(255, 159, 10, 0.3);
+  text-shadow: 0 0 8px var(--header-orange-glow);
+}
+
+/* H4 */
+.document h4 {
+  font-size: 0.9rem; color: var(--header-orange); font-weight: 700;
+  margin: 1.2rem 0 0.4rem;
+}
+
+/* Paragraph */
+.document p { margin: 0.65rem 0; }
+
+/* Horizontal Rule */
+.document hr {
+  border: none; border-top: 1px solid var(--border);
+  margin: 1.75rem 0;
+}
+
+/* Tables */
+.document table {
+  width: 100%; border-collapse: collapse;
+  margin: 1.1rem 0; font-size: 0.86rem;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.document thead tr th {
+  background: #111; color: var(--accent);
+  padding: 0.65rem 0.85rem; text-align: left;
+  font-weight: 700; font-size: 0.82rem; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--accent);
+  text-shadow: 0 0 5px rgba(0,216,255,0.2);
+}
+.document tbody tr td {
+  padding: 0.58rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top; line-height: 1.6;
+}
+.document tbody tr:nth-child(odd) td  { background: #000; }
+.document tbody tr:nth-child(even) td { background: #080808; }
+.document tbody tr:hover td { background: rgba(0,216,255,0.05); transition: background 0.12s; }
+.document tbody tr:last-child td { border-bottom: none; }
+
+/* Code blocks — for ASCII diagrams */
+.document pre {
+  background: #000; color: var(--accent);
+  border-radius: 8px; padding: 1.3rem 1.5rem;
+  overflow-x: auto; margin: 1.1rem 0;
+  font-size: 0.8rem; line-height: 1.65;
+  border: 1px solid rgba(0,216,255,0.2);
+  box-shadow: inset 0 0 15px rgba(0,216,255,0.05);
+}
+.document pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+/* Inline code */
+.document :not(pre) > code {
+  background: rgba(255, 69, 58, 0.1); color: #ff6961;
+  border: 1px solid rgba(255, 69, 58, 0.2);
+  padding: 2px 6px; border-radius: 4px;
+  font-size: 0.85em; font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+/* Lists */
+.document ul, .document ol { padding-left: 1.6rem; margin: 0.6rem 0; }
+.document li { margin: 0.28rem 0; }
+.document ul li::marker { color: var(--accent); text-shadow: 0 0 5px var(--accent); }
+
+/* Blockquote — mnemonics */
+.document blockquote {
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 216, 255, 0.05);
+  padding: 0.8rem 1.1rem; margin: 1rem 0;
+  border-radius: 0 8px 8px 0;
+  font-style: normal;
+  box-shadow: -1px 0 8px rgba(0,216,255,0.1);
+}
+.document blockquote p { margin: 0.2rem 0; }
+.document blockquote strong { color: var(--text-bright); }
+
+/* Strong */
+.document strong { color: var(--text-bright); font-weight: 700; }
+
+/* ===== TOAST ===== */
+.toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+  background: #111; color: var(--text-bright);
+  border: 1px solid var(--border);
+  padding: 0.75rem 1.2rem; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+  transform: translateY(20px); opacity: 0;
+  transition: transform 0.25s, opacity 0.25s;
+  pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-left: 3px solid var(--success); box-shadow: -2px 0 10px rgba(50,215,75,0.3); }
+.toast.error   { border-left: 3px solid var(--danger); box-shadow: -2px 0 10px rgba(255,69,58,0.3); }
+
+/* ===== PRINT STYLES (PDF) - ALWAYS LIGHT FOR EXPORT ===== */
+@media print {
+  body { background: white !important; color: #1a202c !important; }
+
+  .app-bar,
+  #upload-section,
+  .preview-bar,
+  .toast { display: none !important; }
+
+  #preview-section {
+    display: block !important;
+    max-width: 100%; margin: 0; padding: 0;
+  }
+
+  .document {
+    background: white !important;
+    color: #1a202c !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 10.5pt !important;
+    line-height: 1.65 !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 2.2cm 2.5cm 2.5cm 2.5cm;
+  }
+
+  /* Force light theme colors on print elements */
+  .document h1 { color: #1e3a5f !important; font-size: 20pt !important; page-break-after: avoid; }
+  .document h2 { color: #1e3a5f !important; font-size: 12pt !important; page-break-before: auto; page-break-after: avoid; background: #f5f8ff !important; border-left-color: #3182ce !important; }
+  .document h3 { color: #2c5282 !important; font-size: 9.5pt !important; page-break-after: avoid; border-bottom-color: #cbd5e0 !important; }
+  .document h4, .document strong { color: #1a202c !important; }
+  .document h1 + h3 { color: #718096 !important; }
+  .document hr { border-top-color: #cbd5e0 !important; }
+  
+  .document table { page-break-inside: avoid; font-size: 8.5pt !important; border-color: #e2e8f0 !important; }
+  .document thead tr th { background: #1e3a5f !important; color: white !important; border-bottom: none !important;}
+  .document tbody tr td { border-bottom-color: #e2e8f0 !important; }
+  .document tbody tr:nth-child(odd) td  { background: #fafbfd !important; }
+  .document tbody tr:nth-child(even) td { background: white !important; }
+  .document tbody tr:hover td { background: inherit !important; }
+  
+  .document pre  { page-break-inside: avoid; font-size: 7.5pt !important; }
+  .document pre { background-color: #f5f5f5 !important; color: #1a1a1a !important; border-color: #e2e8f0 !important;}
+  .document :not(pre) > code { background: #f0f4f8 !important; color: #c53030 !important; }
+  .document blockquote { background-color: #ebf4ff !important; color: #1a202c !important; border-left-color: #3182ce !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== APP BAR ===== -->
+<header class="app-bar">
+  <div class="app-bar-brand">
+    <div class="app-bar-icon">📋</div>
+    <div>
+      <div class="app-bar-title">PMP Brief Formatter</div>
+      <div class="app-bar-sub">Markdown → Styled DOCX &amp; PDF</div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-ghost" id="btn-clear" disabled onclick="clearAll()">
+      ↺ New File
+    </button>
+    <button class="btn btn-docx" id="btn-docx" disabled onclick="downloadDocx()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      DOCX
+    </button>
+    <button class="btn btn-pdf" id="btn-pdf" disabled onclick="downloadPdf()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      PDF
+    </button>
+  </div>
+</header>
+
+<!-- ===== UPLOAD SECTION ===== -->
+<section id="upload-section">
+  <h1 class="section-heading">PMP Brief Formatter</h1>
+  <p class="section-sub">Upload or paste your Markdown study brief → get a styled DOCX and PDF in seconds</p>
+
+  <!-- Drag & drop zone -->
+  <div class="drop-zone" id="drop-zone"
+       ondragover="onDragOver(event)"
+       ondragleave="onDragLeave(event)"
+       ondrop="onDrop(event)"
+       onclick="document.getElementById('file-input').click()">
+    <div class="dz-icon">📄</div>
+    <div class="dz-title">Drop your Markdown file here</div>
+    <div class="dz-sub">Supports .md files &nbsp;·&nbsp; e.g. "1 Stakeholder Engagement.md"</div>
+    <button class="btn-pick" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+      Choose File
+    </button>
+    <input type="file" id="file-input" accept=".md,.txt" style="display:none" onchange="handleFileInput(event)">
+  </div>
+
+  <div class="or-divider">or paste markdown directly</div>
+
+  <label class="input-label" for="md-input">Paste Markdown</label>
+  <textarea id="md-input" placeholder="# PMP Exam Master Brief: ...&#10;&#10;Paste your full markdown content here and click the button below."></textarea>
+
+  <button class="btn-render" onclick="renderFromTextarea()">
+    Preview &amp; Format →
+  </button>
+</section>
+
+<!-- ===== PREVIEW SECTION ===== -->
+<section id="preview-section">
+  <div class="preview-bar">
+    <span class="preview-label">Formatted Preview</span>
+    <span class="file-badge" id="file-badge">📄 brief.md</span>
+  </div>
+  <div class="document" id="doc-preview"></div>
+</section>
+
+<!-- ===== TOAST ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State
+let currentMarkdown = '';
+let currentFilename = 'brief';
+
+// ── Marked configuration
+marked.setOptions({ breaks: false, gfm: true });
+
+// ── Toast helper
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast ' + type; }, 2800);
+}
+
+// ── Drag & Drop
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('over');
+}
+function onDragLeave() {
+  document.getElementById('drop-zone').classList.remove('over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+}
+function handleFileInput(e) {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+}
+
+function readFile(file) {
+  currentFilename = file.name.replace(/\.(md|txt)$/i, '');
+  const reader = new FileReader();
+  reader.onload = (e) => render(e.target.result);
+  reader.onerror = () => showToast('Could not read file.', 'error');
+  reader.readAsText(file);
+}
+
+function renderFromTextarea() {
+  const md = document.getElementById('md-input').value.trim();
+  if (!md) { showToast('Paste some markdown first.', 'error'); return; }
+  currentFilename = 'brief';
+  render(md);
+}
+
+// ── Render markdown → preview
+function render(md) {
+  currentMarkdown = md;
+
+  // Extract filename from H1 if possible
+  const h1Match = md.match(/^#\s+(.+)/m);
+  if (h1Match) {
+    currentFilename = h1Match[1]
+      .replace(/[^a-z0-9\s-]/gi, '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .substring(0, 60) || 'brief';
+  }
+
+  const html = marked.parse(md);
+  document.getElementById('doc-preview').innerHTML = html;
+
+  // Show preview, hide upload
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('preview-section').style.display = 'block';
+
+  // Update badge
+  document.getElementById('file-badge').textContent = '📄 ' + currentFilename + '.md';
+
+  // Enable header buttons
+  setButtons(true);
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  showToast('Document formatted successfully.');
+}
+
+function setButtons(enabled) {
+  ['btn-clear', 'btn-docx', 'btn-pdf'].forEach(id => {
+    document.getElementById(id).disabled = !enabled;
+  });
+}
+
+// ── Clear
+function clearAll() {
+  currentMarkdown = '';
+  currentFilename = 'brief';
+  document.getElementById('doc-preview').innerHTML = '';
+  document.getElementById('md-input').value = '';
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-section').style.display = '';
+  document.getElementById('preview-section').style.display = 'none';
+  setButtons(false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── PDF via browser print
+function downloadPdf() {
+  showToast('Opening print dialog — choose "Save as PDF".');
+  setTimeout(() => window.print(), 400);
+}
+
+// ── DOCX via html-docx-js
+function downloadDocx() {
+  if (!currentMarkdown || typeof htmlDocx === 'undefined') {
+    showToast('DOCX library not loaded. Check internet connection.', 'error');
+    return;
+  }
+
+  const bodyHtml = marked.parse(currentMarkdown);
+
+  // Full HTML document with Word-friendly styles (EXPLICITLY LIGHT THEME)
+  const docHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt; color: #1a202c; line-height: 1.65; margin: 0;
+    background-color: white;
+  }
+
+  /* Title */
+  h1 {
+    font-size: 22pt; color: #1e3a5f; font-weight: 900;
+    text-align: center;
+    border-bottom: 3pt solid #3182ce;
+    padding-bottom: 8pt; margin-bottom: 6pt; margin-top: 0;
+  }
+
+  /* Subtitle (h3 right after h1) */
+  h1 + h3 {
+    text-align: center; color: #718096; font-size: 10pt;
+    font-weight: 400; margin-top: 4pt; margin-bottom: 12pt;
+    text-transform: none; letter-spacing: 0; border: none;
+  }
+
+  /* Section headers */
+  h2 {
+    font-size: 13pt; color: #1e3a5f; font-weight: 800;
+    border-left: 4pt solid #3182ce;
+    padding: 4pt 8pt; margin-top: 20pt; margin-bottom: 8pt;
+    background-color: #f5f8ff;
+  }
+
+  /* Subsection headers */
+  h3 {
+    font-size: 9.5pt; color: #2c5282; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 0.75pt solid #cbd5e0;
+    padding-bottom: 3pt; margin-top: 14pt; margin-bottom: 5pt;
+  }
+
+  h4 { font-size: 10pt; font-weight: 700; margin: 10pt 0 4pt; }
+
+  p   { margin: 4pt 0 5pt; }
+
+  strong { color: #1e3a5f; font-weight: 700; }
+
+  em { font-style: italic; color: #2c5282; }
+
+  hr { border: none; border-top: 0.75pt solid #cbd5e0; margin: 12pt 0; }
+
+  /* Tables */
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 8pt 0; font-size: 9pt;
+  }
+  th {
+    background-color: #1e3a5f; color: white;
+    padding: 5pt 8pt; text-align: left;
+    font-weight: 700; font-size: 8.5pt;
+  }
+  td {
+    padding: 4.5pt 8pt;
+    border-bottom: 0.5pt solid #e2e8f0;
+    vertical-align: top; line-height: 1.5;
+  }
+  tr:nth-child(even) td { background-color: #f7fafc; }
+
+  /* Code blocks */
+  pre {
+    background-color: #1a202c; color: #e2e8f0;
+    padding: 10pt 12pt; font-size: 8pt;
+    font-family: 'Courier New', Courier, monospace;
+    margin: 8pt 0; line-height: 1.55;
+  }
+  code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 8.5pt;
+  }
+  p code, li code, td code {
+    background-color: #f0f4f8; color: #c53030;
+    padding: 0pt 3pt; font-size: 8pt;
+  }
+
+  /* Lists */
+  ul, ol { padding-left: 18pt; margin: 4pt 0; }
+  li { margin: 2pt 0; }
+
+  /* Blockquote — mnemonics */
+  blockquote {
+    border-left: 3pt solid #3182ce;
+    background-color: #ebf4ff;
+    padding: 6pt 10pt; margin: 8pt 0;
+  }
+  blockquote p { margin: 2pt 0; }
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+
+  try {
+    const blob = htmlDocx.asBlob(docHtml, {
+      orientation: 'portrait',
+      margins: { top: 1080, right: 1080, bottom: 1080, left: 1080 }
+    });
+    saveAs(blob, currentFilename + '.docx');
+    showToast('DOCX downloaded.');
+  } catch (err) {
+    console.error(err);
+    showToast('DOCX generation failed. See console.', 'error');
+  }
+}
+
+// ── Keyboard shortcut: Ctrl/Cmd+P = PDF, Ctrl/Cmd+D = DOCX
+document.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'd' && !document.getElementById('btn-docx').disabled) {
+    e.preventDefault(); downloadDocx();
+  }
+});
+</script>
+</body>
+</html>
